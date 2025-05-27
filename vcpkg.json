@@ -1,0 +1,9 @@
+{
+  "name": "resourcemonitorserver",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "spdlog",
+    "boost",
+    "nlohmann-json"
+  ]
+}
