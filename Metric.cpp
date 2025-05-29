@@ -2,6 +2,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <Pdh.h>
+#include <pdhmsg.h>
+
 namespace ResourceMonitor
 {
 bool Monitor::Init()
@@ -11,14 +14,17 @@ bool Monitor::Init()
         spdlog::error("Failed to open PDH query: {}", status);
         return false;
     }
+    counterValueItems_.resize(256);
     return true;
 }
 
-bool Monitor::AddCounter(const std::wstring name, const std::string displayName)
+bool Monitor::AddCounter(const std::wstring name, const std::string displayName, float multiplier)
 {
     auto counter = std::make_shared<Counter>();
     counter->name = name;
     counter->displayName = displayName;
+    counter->isArray = name.find(L"*") != std::wstring::npos;
+    counter->multiplier = multiplier;
     auto status = PdhAddCounter(query_, name.c_str(), 0, &counter->counter);
     if (status != ERROR_SUCCESS) {
         spdlog::error(L"PdhAddCounter failed for {} with status {}", name, status);
@@ -64,6 +70,33 @@ bool Monitor::AddCustomCounter(std::string displayName)
     return AddCounter(CounterPathBuffer, displayName);
 }
 
+auto Monitor::processArray(const Counter* counter) -> std::expected<float, PDH_STATUS>
+{
+    DWORD size = counterValueItems_.size() * sizeof PDH_FMT_COUNTERVALUE_ITEM;
+    DWORD numItems = 0;
+    float totalValue = 0;
+    auto status = PdhGetFormattedCounterArray(
+        counter->counter, PDH_FMT_DOUBLE, &size, &numItems, counterValueItems_.data()
+    );
+    if (status == PDH_MORE_DATA) {
+        auto requiredItems = size / sizeof(PDH_FMT_COUNTERVALUE_ITEM) + 1;
+        spdlog::info("Resizing array to {}", requiredItems);
+        counterValueItems_.resize(requiredItems);
+        size = counterValueItems_.size() * sizeof PDH_FMT_COUNTERVALUE_ITEM;
+        status = PdhGetFormattedCounterArray(
+            counter->counter, PDH_FMT_DOUBLE, &size, &numItems, counterValueItems_.data()
+        );
+        if (status != ERROR_SUCCESS) {
+            spdlog::error(L"PdhGetFormattedCounterArray failed with status {}", status);
+            return std::unexpected(status);
+        }
+    }
+    for (DWORD i = 0; i < numItems; ++i) {
+        totalValue += counterValueItems_[i].FmtValue.doubleValue;
+    }
+    return totalValue;
+}
+
 bool Monitor::process()
 {
     auto status = PdhCollectQueryData(query_);
@@ -82,14 +115,27 @@ bool Monitor::process()
     auto unix_timestamp = std::chrono::seconds(std::time(NULL));
     lastMeasurement.timestamp = std::chrono::milliseconds(unix_timestamp).count();
     for (auto& counter : counters_) {
-        status = PdhGetFormattedCounterValue(
-            counter->counter, PDH_FMT_DOUBLE, &CounterType, &DisplayValue
-        );
-        if (status != ERROR_SUCCESS) {
-            spdlog::error(L"PdhGetFormattedCounterValue failed with status {}", status);
-            continue;
+        float value = 0;
+        if (counter->isArray) {
+            auto maybeValue = processArray(counter.get());
+            if (!maybeValue) {
+                spdlog::error(
+                    L"Failed to process array counter {}: {}", counter->name, maybeValue.error()
+                );
+                continue;
+            }
+            value = maybeValue.value();
+        } else {
+            status = PdhGetFormattedCounterValue(
+                counter->counter, PDH_FMT_DOUBLE, &CounterType, &DisplayValue
+            );
+            if (status != ERROR_SUCCESS) {
+                spdlog::error(L"PdhGetFormattedCounterValue failed with status {}", status);
+                continue;
+            }
+            value = DisplayValue.doubleValue;
         }
-        lastMeasurement.counters[counter->displayName] = DisplayValue.doubleValue;
+        lastMeasurement.counters[counter->displayName] = value * counter->multiplier;
     }
     if (lastMeasurement.counters.empty()) {
         history_.pop_back();

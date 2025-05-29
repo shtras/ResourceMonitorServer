@@ -22,8 +22,13 @@ int main()
             "CPU" + std::to_string(i)
         );
     }
+    m.AddCounter(L"\\Memory\\Available Bytes", "RAM", 1 / 1024.0f / 1024.0f);
     m.AddCounter(L"\\GPU Engine(*_3D)\\Utilization Percentage", "GPU");
+    m.AddCounter(L"\\GPU Engine(*_VideoDecode)\\Utilization Percentage", "GPUVD");
+    m.AddCounter(L"\\GPU Engine(*_VideoEncode)\\Utilization Percentage", "GPUVE");
+    m.AddCounter(L"\\GPU Process Memory(*)\\Total Committed", "GPUMEM", 1 / 1024.0f / 1024.0f);
 
+    //m.AddCustomCounter("Test");
     m.Start();
 
     ResourceMonitor::Server s(m);

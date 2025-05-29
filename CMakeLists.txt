@@ -14,7 +14,7 @@ project (ResourceMonitorServer VERSION 0.1)
 add_library(resource_monitor_server_compiler_flags INTERFACE)
 target_compile_features(resource_monitor_server_compiler_flags INTERFACE cxx_std_20)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_subdirectory(Simple-Web-Server)

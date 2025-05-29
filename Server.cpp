@@ -48,7 +48,7 @@ void Server::Start()
         std::stringstream stream;
         stream << j.dump().c_str();
         response->write(stream);
-        spdlog::info("Response sent to client.");
+        spdlog::info("Response sent to client. {}", stream.str());
     };
     server->default_resource["GET"] = [&](std::shared_ptr<HttpServer::Response> response,
                                           std::shared_ptr<HttpServer::Request> request) {
